@@ -8,7 +8,7 @@
     
     📖 ИСПОЛЬЗОВАНИЕ:
     
-    local GuiXi = loadstring(game:HttpGet("your_url_here"))()
+    local GuiXi = loadstring(game:HttpGet("https://raw.githubusercontent.com/hatai27/GuiXi-Gui-Library/refs/heads/main/GuiXi"))()
     
     local Window = GuiXi:CreateWindow({
         Title = "My GUI",
