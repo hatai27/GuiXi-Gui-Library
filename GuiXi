@@ -279,7 +279,7 @@ function GuiXiLib:CreateWindow(config)
     self.ScreenGui.Name = "GuiXi_" .. math.random(1000, 9999)
     self.ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     self.ScreenGui.ResetOnSpawn = false
-    self.ScreenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    self.ScreenGui.Parent = game:GetService("CoreGui")  -- ИЗМЕНЕНО: CoreGui вместо PlayerGui
     
     -- Главный Frame
     self.MainFrame = Instance.new("Frame")
