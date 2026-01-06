@@ -1,0 +1,589 @@
+--[[
+    ╔═══════════════════════════════════════════════════════════╗
+    ║              GuiXi Library v1.0                                     ║
+    ║              by @Hatko271                                           ║
+    ║                                                                     ║
+    ║  Простая и мощная библиотека для создания GUI в Roblox.             ║
+    ╚═══════════════════════════════════════════════════════════╝
+    
+    📖 ИСПОЛЬЗОВАНИЕ:
+    
+    local GuiXi = loadstring(game:HttpGet("your_url_here"))()
+    
+    local Window = GuiXi:CreateWindow({
+        Title = "My GUI",
+        TitleImage = "rbxassetid://123456789",
+        ToggleImage = "rbxassetid://987654321"
+    })
+    
+    local MainPage = Window:GetMainPage()
+    MainPage:AddButton("Button 1", function()
+        print("Clicked Button 1!")
+    end)
+    
+    local Page1 = Window:CreatePage("Settings")
+    Page1:AddButton("Setting 1", function()
+        print("Setting clicked!")
+    end)
+]]
+
+-- =====================================================
+-- УТИЛИТЫ
+-- =====================================================
+
+local GuiXiLib = {}
+GuiXiLib.__index = GuiXiLib
+
+-- Функция создания радужной обводки
+local function createRainbowStroke(guiObject, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Parent = guiObject
+    stroke.Thickness = thickness or 0.5
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    
+    local hue = 0
+    local speed = 1
+    
+    local function HSVtoRGB(h, s, v)
+        local r, g, b
+        local i = math.floor(h * 6)
+        local f = h * 6 - i
+        local p = v * (1 - s)
+        local q = v * (1 - f * s)
+        local t = v * (1 - (1 - f) * s)
+        i = i % 6
+        
+        if i == 0 then r, g, b = v, t, p
+        elseif i == 1 then r, g, b = q, v, p
+        elseif i == 2 then r, g, b = p, v, t
+        elseif i == 3 then r, g, b = p, q, v
+        elseif i == 4 then r, g, b = t, p, v
+        elseif i == 5 then r, g, b = v, p, q
+        end
+        
+        return Color3.new(r, g, b)
+    end
+    
+    game:GetService("RunService").Heartbeat:Connect(function(dt)
+        hue = hue + (speed * dt / 10)
+        if hue >= 1 then hue = 0 end
+        stroke.Color = HSVtoRGB(hue, 1, 1)
+    end)
+    
+    return stroke
+end
+
+-- Функция для перетаскивания
+local function makeDraggable(frame)
+    local UserInputService = game:GetService("UserInputService")
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    local function startDrag(input)
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+    end
+    
+    local function updateDrag(input)
+        if dragging then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end
+    
+    local function endDrag()
+        dragging = false
+        dragStart = nil
+        startPos = nil
+    end
+    
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            startDrag(input)
+        end
+    end)
+    
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            updateDrag(input)
+        end
+    end)
+    
+    frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            endDrag()
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            endDrag()
+        end
+    end)
+end
+
+-- Функция для получения информации об игроке
+local function getPlayerInfo()
+    local player = game.Players.LocalPlayer
+    local LocalizationService = game:GetService("LocalizationService")
+    
+    local regionFlags = {
+        ["US"] = "🇺🇸", ["RU"] = "🇷🇺", ["GB"] = "🇬🇧", ["DE"] = "🇩🇪",
+        ["FR"] = "🇫🇷", ["ES"] = "🇪🇸", ["IT"] = "🇮🇹", ["BR"] = "🇧🇷",
+        ["CA"] = "🇨🇦", ["AU"] = "🇦🇺", ["JP"] = "🇯🇵", ["CN"] = "🇨🇳",
+        ["KR"] = "🇰🇷", ["MX"] = "🇲🇽", ["IN"] = "🇮🇳", ["PL"] = "🇵🇱",
+        ["NL"] = "🇳🇱", ["SE"] = "🇸🇪", ["TR"] = "🇹🇷", ["UA"] = "🇺🇦"
+    }
+    
+    local function getPlayerRegion()
+        local success, result = pcall(function()
+            return LocalizationService:GetCountryRegionForPlayerAsync(player)
+        end)
+        
+        if success and result then
+            local flag = regionFlags[result] or "🏳️"
+            return flag .. " " .. result
+        else
+            return "🏳️ Unknown"
+        end
+    end
+    
+    local displayName = player.DisplayName or "Unknown"
+    local userName = player.Name or "Unknown"
+    local region = getPlayerRegion()
+    
+    return string.format(
+        "Hello %s!\nYour Displayname: %s\nYour Username: %s\nYour region: %s\nThanks for using GuiXi!",
+        displayName, displayName, userName, region
+    )
+end
+
+-- =====================================================
+-- КЛАСС PAGE
+-- =====================================================
+
+local Page = {}
+Page.__index = Page
+
+function Page.new(name, contentFrame, window)
+    local self = setmetatable({}, Page)
+    
+    self.Name = name
+    self.ContentFrame = contentFrame
+    self.Window = window
+    self.Buttons = {}
+    self.ButtonCount = 0
+    
+    -- Создаем ScrollingFrame для кнопок
+    self.ScrollingFrame = Instance.new("ScrollingFrame")
+    self.ScrollingFrame.Name = "ButtonContainer"
+    self.ScrollingFrame.Size = UDim2.new(1, 0, 1, 0)
+    self.ScrollingFrame.Position = UDim2.new(0, 0, 0, 0)
+    self.ScrollingFrame.BackgroundTransparency = 1
+    self.ScrollingFrame.BorderSizePixel = 0
+    self.ScrollingFrame.ScrollBarThickness = 6
+    self.ScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(45, 45, 45)
+    self.ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    self.ScrollingFrame.Parent = contentFrame
+    
+    -- UIGridLayout для автоматического размещения кнопок
+    self.GridLayout = Instance.new("UIGridLayout")
+    self.GridLayout.Parent = self.ScrollingFrame
+    self.GridLayout.CellSize = UDim2.new(0, 122, 0, 54)
+    self.GridLayout.CellPadding = UDim2.new(0, 6, 0, 6)
+    self.GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    -- UIPadding для отступов
+    local padding = Instance.new("UIPadding")
+    padding.Parent = self.ScrollingFrame
+    padding.PaddingLeft = UDim.new(0, 6)
+    padding.PaddingRight = UDim.new(0, 6)
+    padding.PaddingTop = UDim.new(0, 4)
+    padding.PaddingBottom = UDim.new(0, 4)
+    
+    -- Обновление размера Canvas при изменении layout
+    self.GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        self.ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, self.GridLayout.AbsoluteContentSize.Y + 8)
+    end)
+    
+    return self
+end
+
+function Page:AddButton(text, callback)
+    self.ButtonCount = self.ButtonCount + 1
+    
+    local button = Instance.new("TextButton")
+    button.Name = "Button_" .. self.ButtonCount
+    button.BorderSizePixel = 0
+    button.TextSize = 13
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    button.FontFace = Font.new("rbxasset://fonts/families/HighwayGothic.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    button.Text = text
+    button.LayoutOrder = self.ButtonCount
+    button.Parent = self.ScrollingFrame
+    
+    local corner = Instance.new("UICorner")
+    corner.Parent = button
+    
+    createRainbowStroke(button, 0.5)
+    
+    button.MouseButton1Click:Connect(function()
+        if callback then
+            pcall(callback)
+        end
+    end)
+    
+    table.insert(self.Buttons, button)
+    return button
+end
+
+function Page:Show()
+    self.ContentFrame.Visible = true
+end
+
+function Page:Hide()
+    self.ContentFrame.Visible = false
+end
+
+-- =====================================================
+-- КЛАСС WINDOW
+-- =====================================================
+
+function GuiXiLib:CreateWindow(config)
+    local self = setmetatable({}, GuiXiLib)
+    
+    config = config or {}
+    self.Title = config.Title or "GuiXi"
+    self.TitleImage = config.TitleImage or ""
+    self.ToggleImage = config.ToggleImage or ""
+    
+    self.Pages = {}
+    self.PageButtons = {}
+    self.CurrentPage = nil
+    self.IsVisible = true
+    
+    -- Создаем ScreenGui
+    self.ScreenGui = Instance.new("ScreenGui")
+    self.ScreenGui.Name = "GuiXi_" .. math.random(1000, 9999)
+    self.ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    self.ScreenGui.ResetOnSpawn = false
+    self.ScreenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    
+    -- Главный Frame
+    self.MainFrame = Instance.new("Frame")
+    self.MainFrame.Name = "MainFrame"
+    self.MainFrame.BorderSizePixel = 0
+    self.MainFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    self.MainFrame.Size = UDim2.new(0, 502, 0, 276)
+    self.MainFrame.Position = UDim2.new(0.5, -251, 0.5, -138)
+    self.MainFrame.Parent = self.ScreenGui
+    
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.Parent = self.MainFrame
+    
+    createRainbowStroke(self.MainFrame, 1.5)
+    makeDraggable(self.MainFrame)
+    
+    -- Title Image
+    self.TitleImageLabel = Instance.new("ImageLabel")
+    self.TitleImageLabel.Name = "TitleImage"
+    self.TitleImageLabel.BorderSizePixel = 0
+    self.TitleImageLabel.BackgroundTransparency = 1
+    self.TitleImageLabel.Image = self.TitleImage
+    self.TitleImageLabel.Size = UDim2.new(0, 54, 0, 54)
+    self.TitleImageLabel.Position = UDim2.new(0, 8, 0, 4)
+    self.TitleImageLabel.Parent = self.MainFrame
+    
+    -- Title Text
+    self.TitleLabel = Instance.new("TextLabel")
+    self.TitleLabel.Name = "TitleLabel"
+    self.TitleLabel.BorderSizePixel = 0
+    self.TitleLabel.TextSize = 27
+    self.TitleLabel.BackgroundTransparency = 1
+    self.TitleLabel.FontFace = Font.new("rbxasset://fonts/families/HighwayGothic.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    self.TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    self.TitleLabel.Size = UDim2.new(0, 300, 0, 46)
+    self.TitleLabel.Text = self.Title
+    self.TitleLabel.Position = UDim2.new(0, 64, 0, 4)
+    self.TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    self.TitleLabel.Parent = self.MainFrame
+    
+    -- Close Button
+    self.CloseButton = Instance.new("TextButton")
+    self.CloseButton.Name = "CloseButton"
+    self.CloseButton.BorderSizePixel = 0
+    self.CloseButton.TextSize = 17
+    self.CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    self.CloseButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    self.CloseButton.Size = UDim2.new(0, 52, 0, 42)
+    self.CloseButton.Text = "X"
+    self.CloseButton.Position = UDim2.new(1, -58, 0, 6)
+    self.CloseButton.Parent = self.MainFrame
+    
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.Parent = self.CloseButton
+    
+    createRainbowStroke(self.CloseButton, 0.5)
+    
+    self.CloseButton.MouseButton1Click:Connect(function()
+        self:Hide()
+    end)
+    
+    -- Pages Container (левая панель)
+    self.PagesContainer = Instance.new("ScrollingFrame")
+    self.PagesContainer.Name = "PagesContainer"
+    self.PagesContainer.BorderSizePixel = 0
+    self.PagesContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    self.PagesContainer.Size = UDim2.new(0, 82, 0, 210)
+    self.PagesContainer.Position = UDim2.new(0, 6, 0, 62)
+    self.PagesContainer.ScrollBarThickness = 6
+    self.PagesContainer.ScrollBarImageColor3 = Color3.fromRGB(45, 45, 45)
+    self.PagesContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+    self.PagesContainer.Parent = self.MainFrame
+    
+    local pagesCorner = Instance.new("UICorner")
+    pagesCorner.Parent = self.PagesContainer
+    
+    createRainbowStroke(self.PagesContainer, 0.5)
+    
+    -- UIListLayout для кнопок страниц
+    self.PagesLayout = Instance.new("UIListLayout")
+    self.PagesLayout.Parent = self.PagesContainer
+    self.PagesLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    self.PagesLayout.Padding = UDim.new(0, 4)
+    
+    local pagesPadding = Instance.new("UIPadding")
+    pagesPadding.Parent = self.PagesContainer
+    pagesPadding.PaddingLeft = UDim.new(0, 2)
+    pagesPadding.PaddingRight = UDim.new(0, 2)
+    pagesPadding.PaddingTop = UDim.new(0, 2)
+    pagesPadding.PaddingBottom = UDim.new(0, 2)
+    
+    -- Обновление Canvas Size
+    self.PagesLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        self.PagesContainer.CanvasSize = UDim2.new(0, 0, 0, self.PagesLayout.AbsoluteContentSize.Y + 4)
+    end)
+    
+    -- Content Container (правая панель)
+    self.ContentContainer = Instance.new("Frame")
+    self.ContentContainer.Name = "ContentContainer"
+    self.ContentContainer.BorderSizePixel = 0
+    self.ContentContainer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    self.ContentContainer.Size = UDim2.new(0, 398, 0, 208)
+    self.ContentContainer.Position = UDim2.new(0, 94, 0, 62)
+    self.ContentContainer.Parent = self.MainFrame
+    
+    local contentCorner = Instance.new("UICorner")
+    contentCorner.Parent = self.ContentContainer
+    
+    createRainbowStroke(self.ContentContainer, 0.5)
+    
+    -- Toggle Button
+    self.ToggleButton = Instance.new("ImageButton")
+    self.ToggleButton.Name = "ToggleButton"
+    self.ToggleButton.BorderSizePixel = 0
+    self.ToggleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    self.ToggleButton.Size = UDim2.new(0, 72, 0, 68)
+    self.ToggleButton.Image = self.ToggleImage
+    self.ToggleButton.Position = UDim2.new(0, 10, 0, 10)
+    self.ToggleButton.Parent = self.ScreenGui
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.Parent = self.ToggleButton
+    
+    createRainbowStroke(self.ToggleButton, 1.5)
+    makeDraggable(self.ToggleButton)
+    
+    self.ToggleButton.MouseButton1Click:Connect(function()
+        self:Toggle()
+    end)
+    
+    -- Создаем Main страницу по умолчанию
+    self:CreateMainPage()
+    
+    return self
+end
+
+function GuiXiLib:CreateMainPage()
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainPage"
+    mainFrame.Size = UDim2.new(1, 0, 1, 0)
+    mainFrame.BackgroundTransparency = 1
+    mainFrame.Visible = true
+    mainFrame.Parent = self.ContentContainer
+    
+    -- Текст информации об игроке
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Name = "InfoLabel"
+    infoLabel.BorderSizePixel = 0
+    infoLabel.TextSize = 15
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    infoLabel.Size = UDim2.new(1, -132, 1, -8)
+    infoLabel.Position = UDim2.new(0, 130, 0, 4)
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    infoLabel.TextWrapped = true
+    infoLabel.Parent = mainFrame
+    
+    task.spawn(function()
+        task.wait(0.5)
+        infoLabel.Text = getPlayerInfo()
+    end)
+    
+    -- Аватар игрока
+    local avatarImage = Instance.new("ImageLabel")
+    avatarImage.Name = "AvatarImage"
+    avatarImage.BorderSizePixel = 0
+    avatarImage.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    avatarImage.Size = UDim2.new(0, 120, 0, 116)
+    avatarImage.Position = UDim2.new(0, 6, 0, 4)
+    avatarImage.Parent = mainFrame
+    
+    local avatarCorner = Instance.new("UICorner")
+    avatarCorner.Parent = avatarImage
+    
+    createRainbowStroke(avatarImage, 0.5)
+    
+    local player = game.Players.LocalPlayer
+    if player and player.UserId then
+        avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=420&h=420"
+    end
+    
+    -- Создаем кнопку Main в списке страниц
+    local mainButton = Instance.new("TextButton")
+    mainButton.Name = "MainButton"
+    mainButton.BorderSizePixel = 0
+    mainButton.TextSize = 22
+    mainButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    mainButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    mainButton.FontFace = Font.new("rbxasset://fonts/families/HighwayGothic.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    mainButton.Size = UDim2.new(1, -4, 0, 64)
+    mainButton.Text = "Main"
+    mainButton.LayoutOrder = 0
+    mainButton.Parent = self.PagesContainer
+    
+    local mainBtnCorner = Instance.new("UICorner")
+    mainBtnCorner.Parent = mainButton
+    
+    createRainbowStroke(mainButton, 0.5)
+    
+    mainButton.MouseButton1Click:Connect(function()
+        self:ShowPage("Main")
+    end)
+    
+    -- Сохраняем Main страницу
+    local mainPage = Page.new("Main", mainFrame, self)
+    self.Pages["Main"] = mainPage
+    self.PageButtons["Main"] = mainButton
+    self.CurrentPage = mainPage
+    
+    return mainPage
+end
+
+function GuiXiLib:GetMainPage()
+    return self.Pages["Main"]
+end
+
+function GuiXiLib:CreatePage(name)
+    if self.Pages[name] then
+        warn("Page '" .. name .. "' already exists!")
+        return self.Pages[name]
+    end
+    
+    -- Создаем Frame для контента страницы
+    local pageFrame = Instance.new("Frame")
+    pageFrame.Name = name .. "Page"
+    pageFrame.Size = UDim2.new(1, 0, 1, 0)
+    pageFrame.BackgroundTransparency = 1
+    pageFrame.Visible = false
+    pageFrame.Parent = self.ContentContainer
+    
+    -- Создаем кнопку страницы
+    local pageButton = Instance.new("TextButton")
+    pageButton.Name = name .. "Button"
+    pageButton.BorderSizePixel = 0
+    pageButton.TextSize = 22
+    pageButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    pageButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    pageButton.FontFace = Font.new("rbxasset://fonts/families/HighwayGothic.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    pageButton.Size = UDim2.new(1, -4, 0, 64)
+    pageButton.Text = name
+    pageButton.LayoutOrder = #self.Pages + 1
+    pageButton.Parent = self.PagesContainer
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.Parent = pageButton
+    
+    createRainbowStroke(pageButton, 0.5)
+    
+    pageButton.MouseButton1Click:Connect(function()
+        self:ShowPage(name)
+    end)
+    
+    -- Создаем объект Page
+    local page = Page.new(name, pageFrame, self)
+    self.Pages[name] = page
+    self.PageButtons[name] = pageButton
+    
+    return page
+end
+
+function GuiXiLib:ShowPage(name)
+    local page = self.Pages[name]
+    if not page then
+        warn("Page '" .. name .. "' does not exist!")
+        return
+    end
+    
+    -- Скрываем текущую страницу
+    if self.CurrentPage then
+        self.CurrentPage:Hide()
+    end
+    
+    -- Показываем новую страницу
+    page:Show()
+    self.CurrentPage = page
+end
+
+function GuiXiLib:Toggle()
+    if self.IsVisible then
+        self:Hide()
+    else
+        self:Show()
+    end
+end
+
+function GuiXiLib:Show()
+    self.MainFrame.Visible = true
+    self.IsVisible = true
+end
+
+function GuiXiLib:Hide()
+    self.MainFrame.Visible = false
+    self.IsVisible = false
+end
+
+function GuiXiLib:Destroy()
+    if self.ScreenGui then
+        self.ScreenGui:Destroy()
+    end
+end
+
+-- =====================================================
+-- ЭКСПОРТ
+-- =====================================================
+
+return GuiXiLib
